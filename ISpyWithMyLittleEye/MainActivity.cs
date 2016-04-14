@@ -1,12 +1,12 @@
 ﻿using System;
 using Android.App;
 using Android.Content;
-using Android.Runtime;
 using Android.Views;
 using Android.Widget;
 using Android.OS;
-using Android.Util;
 using System.Collections.Generic;
+using System.IO;
+using System.Xml.Serialization;
 
 namespace ISpyWithMyLittleEye
 {
@@ -15,28 +15,39 @@ namespace ISpyWithMyLittleEye
     {
         Button addSessionButton;
         ListView sessionList;
+        TextView nameEdit;
         List<String> sessions;
-
+        static public string RootPath { get; set; }
+        
         protected override void OnCreate(Bundle bundle)
         {
             base.OnCreate(bundle);
 
             // Set our view from the "main" layout resource
             SetContentView(Resource.Layout.Main);
+            
+            RootPath = GetExternalFilesDir(null).ToString();
 
             sessionList = FindViewById<ListView>(Resource.Id.sessionList);
-            sessions = new List<String>();
+
+            var serializer = new XmlSerializer(typeof(List<String>));
+            Stream reader = new FileStream(RootPath, FileMode.Open);
+            sessions = (List<String>)serializer.Deserialize(reader);
+            reader.Close();
+
             var adapter = new ArrayAdapter<String>(this, Android.Resource.Layout.SimpleListItem1, sessions);
             sessionList.Adapter = adapter;
-            var inflater = (LayoutInflater)GetSystemService(Context.LayoutInflaterService);
+
+            var inflater = (LayoutInflater)GetSystemService(LayoutInflaterService);
             var view = inflater.Inflate(Resource.Layout.AddSessionDialog, null);
-            var nameEdit = view.FindViewById<TextView>(Resource.Id.sessionNameEdit);
+            nameEdit = view.FindViewById<TextView>(Resource.Id.sessionNameEdit);
             var dialogBuilder = new AlertDialog.Builder(this)
                 .SetView(view)
                 .SetPositiveButton("Ok", (sender, args) => {
-                    adapter.Add(nameEdit.Text);
-                    adapter.NotifyDataSetChanged();
+                    string name = nameEdit.Text;
+                    adapter.Add(name);
                     nameEdit.Text = "";
+                    Directory.CreateDirectory(RootPath + "/" + name);
                 })
                 .SetNegativeButton("Nope", (sender, args) => {
                     nameEdit.Text = "";
@@ -50,9 +61,14 @@ namespace ISpyWithMyLittleEye
             sessionList.ItemClick += (sender, args) => {
                 string item = adapter.GetItem(args.Position);
                 var session = new Intent(this, typeof(SessionActivity));
-				StartActivity(session);
+                StartActivity(session);
             };
+        }
+
+        protected override void OnPause()
+        {
+            base.OnPause();
+
         }
     }
 }
-
