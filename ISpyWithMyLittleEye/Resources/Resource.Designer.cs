@@ -63,9 +63,6 @@ namespace ISpyWithMyLittleEye
 			// aapt resource value: 0x7f050001
 			public const int addSessionButton = 2131034113;
 			
-			// aapt resource value: 0x7f050006
-			public const int imageView1 = 2131034118;
-			
 			// aapt resource value: 0x7f050003
 			public const int linearLayout1 = 2131034115;
 			

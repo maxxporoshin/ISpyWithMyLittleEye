@@ -1,10 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 
 using Android.App;
-using Android.Content;
 using Android.OS;
 using Android.Runtime;
 using Android.Views;
@@ -59,7 +56,7 @@ namespace ISpyWithMyLittleEye
         {
             CameraManager manager = ((CameraManager)GetSystemService(CameraService));
             string cameraId = manager.GetCameraIdList()[0];
-            stateListener = new CameraStateListener(this);
+            stateListener = new CameraStateListener() { Activity = this };
             manager.OpenCamera(cameraId, stateListener, null);
         }
 
@@ -159,22 +156,21 @@ namespace ISpyWithMyLittleEye
 
         private class CameraStateListener : CameraDevice.StateCallback
         {
-            private SessionActivity activity;
-            public CameraStateListener(SessionActivity acti) { activity = acti; }
+            public SessionActivity Activity;
             public override void OnOpened(CameraDevice camera)
             {
-                activity.cameraDevice = camera;
+                Activity.cameraDevice = camera;
             }
             public override void OnDisconnected(CameraDevice camera)
             {
                 camera.Close();
-                activity.cameraDevice = null;
+                Activity.cameraDevice = null;
             }
 
             public override void OnError(CameraDevice camera, [GeneratedEnum] CameraError error)
             {
                 camera.Close();
-                activity.cameraDevice = null;
+                Activity.cameraDevice = null;
             }
         }
     }
