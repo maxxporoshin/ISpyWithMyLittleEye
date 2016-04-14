@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Text;
 
 using Android.App;
 using Android.Content;
@@ -7,206 +9,172 @@ using Android.OS;
 using Android.Runtime;
 using Android.Views;
 using Android.Widget;
+using Android.Hardware.Camera2;
 using Android.Util;
+using Android.Hardware.Camera2.Params;
+using Android.Graphics;
 using Android.Media;
 using Java.IO;
 using Java.Nio;
-using Android.Hardware;
-using Java.Lang;
 
 namespace ISpyWithMyLittleEye
 {
     [Activity(Label = "SessionActivity")]
     public class SessionActivity : Activity
     {
-		Camera camera;
-        CameraPreview preview;
-        MediaRecorder recorder;
-        ISurfaceHolder surfaceHolder;
+        CameraDevice cameraDevice;
+        CameraStateListener stateListener;
 
         protected override void OnCreate(Bundle savedInstanceState)
         {
             base.OnCreate(savedInstanceState);
 
             SetContentView(Resource.Layout.SessionActivityLayout);
-            camera = Camera.Open();
-            preview = new CameraPreview(this, camera);
-            SurfaceView surfaceView = FindViewById<SurfaceView>(Resource.Id.surfaceView1);
-            surfaceHolder = surfaceView.Holder;
-            surfaceHolder.AddCallback(this);
-            surfaceHolder.SetType(SurfaceType.PushBuffers);
+            // Create your application here
             var spyButton = FindViewById<Button>(Resource.Id.spyButton);
-	
             spyButton.Click += (sender, args) =>
             {
-				TakePicture();
+                TakePicture();
             };
-            
+
+        }
+
+        protected override void OnResume()
+        {
+            base.OnResume();
+            OpenCamera();
         }
 
         protected override void OnPause()
         {
             base.OnPause();
-            ReleaseMediaRecorder();
-            ReleaseCamera();
+            if (cameraDevice != null)
+            {
+                cameraDevice.Close();
+                cameraDevice = null;
+            }
         }
+
+        protected void OpenCamera()
+        {
+            CameraManager manager = ((CameraManager)GetSystemService(CameraService));
+            string cameraId = manager.GetCameraIdList()[0];
+            stateListener = new CameraStateListener(this);
+            manager.OpenCamera(cameraId, stateListener, null);
+        }
+
         protected void TakePicture()
         {
-			camera.TakePicture(null, null, new PictureCallback());
-        }
+            CameraManager manager = ((CameraManager)GetSystemService(CameraService));
+            CameraCharacteristics characteristics = manager.GetCameraCharacteristics(cameraDevice.Id);
+            Size[] jpegSizes = ((StreamConfigurationMap)characteristics
+                .Get(CameraCharacteristics.ScalerStreamConfigurationMap)).GetOutputSizes((int)ImageFormatType.Jpeg);
+            int width = jpegSizes[0].Width;
+            int height = jpegSizes[0].Height;
+            ImageReader reader = ImageReader.NewInstance(width, height, ImageFormatType.Jpeg, 1);
+            List<Surface> outputSurfaces = new List<Surface>(1);
+            outputSurfaces.Add(reader.Surface);
 
-        private bool PrepareMediaRecorder()
-        {
-            camera = Camera.Open();
-            recorder = new MediaRecorder();
+            CaptureRequest.Builder captureBuilder = cameraDevice.CreateCaptureRequest(CameraTemplate.StillCapture);
+            captureBuilder.AddTarget(reader.Surface);
 
-            camera.Unlock();
-            recorder.SetCamera(camera);
+            File file = new File(GetExternalFilesDir(null), "pic.jpg");
+            ImageAvailableListener readerListener = new ImageAvailableListener() { File = file };
 
-            recorder.SetAudioSource(AudioSource.Camcorder);
-            recorder.SetVideoSource(VideoSource.Camera);
+            HandlerThread thread = new HandlerThread("CameraPicture");
+            thread.Start();
+            Handler backgroundHandler = new Handler(thread.Looper);
+            reader.SetOnImageAvailableListener(readerListener, backgroundHandler);
 
-            recorder.SetProfile(CamcorderProfile.Get(CamcorderQuality.High));
-
-            recorder.SetOutputFile(GetOutputMediaFile(MediaType.Video).ToString());
-
-            recorder.SetPreviewDisplay(preview.Holder.Surface);
-
-            try
+            CameraCaptureListener captureListener = new CameraCaptureListener() { Activity = this, File = file };
+            cameraDevice.CreateCaptureSession(outputSurfaces, new CameraCaptureStateListener()
             {
-                recorder.Prepare();
-            }
-            catch (IllegalStateException e)
-            {
-                Log.Debug("PrepareMediaRecorder", "Illegal state: " + e.Message);
-                ReleaseMediaRecorder();
-                return false;
-            }
-            catch (IOException e)
-            {
-                Log.Debug("PrepareMediaRecorder", "IOException " + e.Message);
-                ReleaseMediaRecorder();
-                return false;
-            }
-
-            return true;
-        }
-
-        private void ReleaseMediaRecorder()
-        {
-            if(recorder != null)
-            {
-                recorder.Reset();
-                recorder.Release();
-                recorder = null;
-                camera.Lock();
-            }
-        }
-
-        private void ReleaseCamera()
-        {
-            if (camera != null)
-            {
-                camera.Release();
-                camera = null;
-            }
-        }
-
-        private static Android.Net.Uri GetOutputMediaFileUri(MediaType type)
-        {
-            return Android.Net.Uri.FromFile(GetOutputMediaFile(type));
-        }
-
-        private static File GetOutputMediaFile(MediaType type)
-        {
-            File mediaStorageDir = new File(MainActivity.RootPath);
-            File mediaFile = null;
-            switch (type)
-            {
-                case MediaType.Image:
-                    mediaFile = new File(mediaStorageDir.Path + File.Separator + "hui.jpg");
-                    break;
-                case MediaType.Video:
-                    mediaFile = new File(mediaStorageDir.Path + File.Separator + "hui.mp4");
-                    break;
-
-            }
-            return mediaFile;
-        }
-
-        private enum MediaType
-        {
-            Video,
-            Image
-        }
-
-        private class PictureCallback : Camera.IPictureCallback 
-		{
-			public void OnPictureTaken(byte[] data, Camera camera)
-			{
-                File pictureFile = SessionActivity.GetOutputMediaFile(MediaType.Image);
-                if (pictureFile == null)
+                OnConfiguredAction = (CameraCaptureSession session) =>
                 {
-                    Log.Debug("OnPictureTaken: pictureFile", "error creating media file");
-                    return;
+                    session.Capture(captureBuilder.Build(), captureListener, backgroundHandler);
                 }
+            }, backgroundHandler);
+        }
 
+        private class CameraCaptureListener : CameraCaptureSession.CaptureCallback
+        {
+            public SessionActivity Activity;
+            public File File;
+            public override void OnCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result)
+            {
+                base.OnCaptureCompleted(session, request, result);
+                Activity activity = Activity;
+                if (activity != null)
+                {
+                    Toast.MakeText(activity, "Saved: " + File.ToString(), ToastLength.Short).Show();
+                }
+            }
+        }
+
+        private class CameraCaptureStateListener : CameraCaptureSession.StateCallback
+        {
+            public Action<CameraCaptureSession> OnConfiguredAction;
+            public override void OnConfigured(CameraCaptureSession session)
+            {
+                OnConfiguredAction(session);
+            }
+            public Action<CameraCaptureSession> OnConfigureFailedAction;
+            public override void OnConfigureFailed(CameraCaptureSession session)
+            {
+                OnConfigureFailedAction(session);
+            }
+        }
+
+        private class ImageAvailableListener : Java.Lang.Object, ImageReader.IOnImageAvailableListener
+        {
+            public File File;
+            public void OnImageAvailable(ImageReader reader)
+            {
+                Image image = null;
+                image = reader.AcquireLatestImage();
+
+                ByteBuffer buffer = image.GetPlanes()[0].Buffer;
+                byte[] bytes = new byte[buffer.Capacity()];
+                buffer.Get(bytes);
+                Save(bytes);
+            }
+            private void Save(byte[] bytes)
+            {
+                OutputStream output = null;
                 try
                 {
-                    FileOutputStream fos = new FileOutputStream(pictureFile);
-                    fos.Write(data);
-                    fos.Close();
-                    Log.Debug("OnPictureTaken", "Success");
+                    if (File != null)
+                    {
+                        output = new FileOutputStream(File);
+                        output.Write(bytes);
+                    }
                 }
-                catch (FileNotFoundException e)
+                finally
                 {
-                    Log.Debug("OnPictureTaken: fos", "File not found: " + e.Message);
+                    if (output != null)
+                        output.Close();
                 }
-                catch (IOException e)
-                {
-                    Log.Debug("OnPictureTaken fos", "Error accessing file: " + e.Message);
-                }
-                
-			}
+            }
+        }
 
-			public void Dispose()
-			{
-			}
-
-			public IntPtr Handle {
-				get;
-			}
-		}
-
-        private class CameraPreview : SurfaceView, ISurfaceHolderCallback
+        private class CameraStateListener : CameraDevice.StateCallback
         {
-            private Camera camera;
-
-            public CameraPreview(Context context, Camera camera) : base(context)
+            private SessionActivity activity;
+            public CameraStateListener(SessionActivity acti) { activity = acti; }
+            public override void OnOpened(CameraDevice camera)
             {
-                this.camera = camera;
-                Holder.AddCallback(this);
+                activity.cameraDevice = camera;
+            }
+            public override void OnDisconnected(CameraDevice camera)
+            {
+                camera.Close();
+                activity.cameraDevice = null;
             }
 
-            public void SurfaceChanged(ISurfaceHolder holder, [GeneratedEnum] Android.Graphics.Format format, int width, int height)
+            public override void OnError(CameraDevice camera, [GeneratedEnum] CameraError error)
             {
-            }
-
-            public void SurfaceCreated(ISurfaceHolder holder)
-            {
-                try
-                {
-                    camera.SetPreviewDisplay(holder);
-                    camera.StartPreview();
-                }
-                catch(IOException e)
-                {
-                    Log.Debug("SurfaceCreated", "Error setting camera preview: " + e.Message);
-                }
-            }
-
-            public void SurfaceDestroyed(ISurfaceHolder holder)
-            {
+                camera.Close();
+                activity.cameraDevice = null;
             }
         }
     }
