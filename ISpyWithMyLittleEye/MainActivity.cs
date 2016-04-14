@@ -6,8 +6,6 @@ using Android.Widget;
 using Android.OS;
 using System.Collections.Generic;
 using System.IO;
-using System.Xml.Serialization;
-using Android.Provider;
 
 namespace ISpyWithMyLittleEye
 {
@@ -31,10 +29,6 @@ namespace ISpyWithMyLittleEye
 
             sessionList = FindViewById<ListView>(Resource.Id.sessionList);
 
-            /*var serializer = new XmlSerializer(typeof(List<String>));
-            Stream reader = new FileStream(RootPath, FileMode.Open);
-            sessions = (List<String>)serializer.Deserialize(reader);
-            reader.Close();*/
 			sessions = new List<String> ();
 
             var adapter = new ArrayAdapter<String>(this, Android.Resource.Layout.SimpleListItem1, sessions);
