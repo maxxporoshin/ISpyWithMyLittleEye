@@ -28,7 +28,7 @@ namespace ISpyWithMyLittleEye
             sessions = new List<String>();
             var adapter = new ArrayAdapter<String>(this, Android.Resource.Layout.SimpleListItem1, sessions);
             sessionList.Adapter = adapter;
-            var inflater = (LayoutInflater)GetSystemService(Context.LayoutInflaterService);
+            var inflater = (LayoutInflater)GetSystemService(LayoutInflaterService);
             var view = inflater.Inflate(Resource.Layout.AddSessionDialog, null);
             var nameEdit = view.FindViewById<TextView>(Resource.Id.sessionNameEdit);
             var dialogBuilder = new AlertDialog.Builder(this)
@@ -50,9 +50,8 @@ namespace ISpyWithMyLittleEye
             sessionList.ItemClick += (sender, args) => {
                 string item = adapter.GetItem(args.Position);
                 var session = new Intent(this, typeof(SessionActivity));
-                session.Put 
+                StartActivity(session);
             };
         }
     }
 }
-
