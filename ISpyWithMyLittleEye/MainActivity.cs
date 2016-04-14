@@ -50,7 +50,7 @@ namespace ISpyWithMyLittleEye
             sessionList.ItemClick += (sender, args) => {
                 string item = adapter.GetItem(args.Position);
                 var session = new Intent(this, typeof(SessionActivity));
-                session.Put 
+				StartActivity(session);
             };
         }
     }
