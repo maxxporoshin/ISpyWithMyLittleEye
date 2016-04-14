@@ -24,7 +24,6 @@ namespace ISpyWithMyLittleEye
     {
         CameraDevice cameraDevice;
         CameraStateListener stateListener;
-        CameraManager manager;
 
         protected override void OnCreate(Bundle savedInstanceState)
         {
@@ -46,9 +45,19 @@ namespace ISpyWithMyLittleEye
             OpenCamera();
         }
 
+        protected override void OnPause()
+        {
+            base.OnPause();
+            if (cameraDevice != null)
+            {
+                cameraDevice.Close();
+                cameraDevice = null;
+            }
+        }
+
         protected void OpenCamera()
         {
-            manager = ((CameraManager)GetSystemService(CameraService));
+            CameraManager manager = ((CameraManager)GetSystemService(CameraService));
             string cameraId = manager.GetCameraIdList()[0];
             stateListener = new CameraStateListener(this);
             manager.OpenCamera(cameraId, stateListener, null);
@@ -56,6 +65,7 @@ namespace ISpyWithMyLittleEye
 
         protected void TakePicture()
         {
+            CameraManager manager = ((CameraManager)GetSystemService(CameraService));
             CameraCharacteristics characteristics = manager.GetCameraCharacteristics(cameraDevice.Id);
             Size[] jpegSizes = ((StreamConfigurationMap)characteristics
                 .Get(CameraCharacteristics.ScalerStreamConfigurationMap)).GetOutputSizes((int)ImageFormatType.Jpeg);
@@ -67,7 +77,6 @@ namespace ISpyWithMyLittleEye
 
             CaptureRequest.Builder captureBuilder = cameraDevice.CreateCaptureRequest(CameraTemplate.StillCapture);
             captureBuilder.AddTarget(reader.Surface);
-            captureBuilder.Set(CaptureRequest.ControlMode, new Java.Lang.Integer((int)ControlMode.Auto));
 
             File file = new File(GetExternalFilesDir(null), "pic.jpg");
             ImageAvailableListener readerListener = new ImageAvailableListener() { File = file };
