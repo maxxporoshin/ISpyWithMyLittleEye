@@ -5,10 +5,10 @@
     p1:layout_width="match_parent"
     p1:layout_height="match_parent"
     p1:id="@+id/relativeLayout1">
-    <SurfaceView
+    <TextureView
         p1:layout_width="0px"
         p1:layout_height="0px"
-        p1:id="@+id/dummySurfaceView" />
+        p1:id="@+id/dummyTextureView" />
     <Button
         p1:text="Button"
         p1:layout_width="match_parent"
