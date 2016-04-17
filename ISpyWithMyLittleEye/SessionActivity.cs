@@ -1,117 +1,96 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-
 using Android.App;
 using Android.Content;
 using Android.OS;
-using Android.Runtime;
 using Android.Util;
 using Android.Views;
 using Android.Widget;
-using Android.Hardware;
 using Android.Hardware.Camera2;
 using Android.Hardware.Camera2.Params;
 using Android.Graphics;
-using Android.Content.Res;
 using Android.Media;
 using Java.IO;
 using Java.Nio;
 using Java.Lang;
-
 using CameraError = Android.Hardware.Camera2.CameraError;
 
 namespace ISpyWithMyLittleEye
 {
     [Activity(Label = "Session Activity")]
-    public class SessionActivity : Activity, View.IOnClickListener
+    public class SessionActivity : Activity
     {
-        private static readonly SparseIntArray ORIENTATIONS = new SparseIntArray();
-        // An AutoFitTextureView for camera preview
-        private TextureView mTextureView;
-
-        // A CameraRequest.Builder for camera preview
-        private CaptureRequest.Builder mPreviewBuilder;
-
-        // A CameraCaptureSession for camera preview
-        private CameraCaptureSession mPreviewSession;
-
+        private List<string> images;
+        private MediaListAdapter adapter;
+        private ListView mediaList;
+        private string sessionPath;
         // A reference to the opened CameraDevice
-        private CameraDevice mCameraDevice;
+        private CameraDevice cameraDevice;
+        // True if the app is currently trying to open the camera
+        private bool openingCamera;
+        // CameraDevice.StateListener is called when a CameraDevice changes its state
+        private CameraStateListener stateListener;
 
-        // TextureView.ISurfaceTextureListener handles several lifecycle events on a TextureView
-        private Camera2BasicSurfaceTextureListener mSurfaceTextureListener;
-        private class Camera2BasicSurfaceTextureListener : Java.Lang.Object, TextureView.ISurfaceTextureListener
+        protected override void OnCreate(Bundle savedInstanceState)
         {
-            private SessionActivity Fragment;
-            public Camera2BasicSurfaceTextureListener(SessionActivity fragment)
-            {
-                Fragment = fragment;
-            }
-            public void OnSurfaceTextureAvailable(Android.Graphics.SurfaceTexture surface, int width, int height)
-            {
-                Fragment.ConfigureTransform(width, height);
-                Fragment.StartPreview();
-            }
+            base.OnCreate(savedInstanceState);
+            SetContentView(Resource.Layout.SessionActivityLayout);
+            stateListener = new CameraStateListener() { Activity = this };
+            FindViewById<Button>(Resource.Id.spyButton).Click += (sender, args) => { TakePicture(); };
+            images = new List<string>();
+            adapter = new MediaListAdapter(this, images);
+            mediaList = FindViewById<ListView>(Resource.Id.mediaList);
+            mediaList.Adapter = adapter;
+            UpdateMediaList();
 
-            public bool OnSurfaceTextureDestroyed(Android.Graphics.SurfaceTexture surface)
+        }
+        protected override void OnResume()
+        {
+            base.OnResume();
+            OpenCamera();
+        }
+        protected override void OnPause()
+        {
+            base.OnPause();
+            if (cameraDevice != null)
             {
-                return true;
-            }
-
-            public void OnSurfaceTextureSizeChanged(Android.Graphics.SurfaceTexture surface, int width, int height)
-            {
-                Fragment.ConfigureTransform(width, height);
-                Fragment.StartPreview();
-            }
-
-            public void OnSurfaceTextureUpdated(Android.Graphics.SurfaceTexture surface)
-            {
-
+                cameraDevice.Close();
+                cameraDevice = null;
             }
         }
 
-        // The size of the camera preview
-        private Size mPreviewSize;
-
-        // True if the app is currently trying to open the camera
-        private bool mOpeningCamera;
-
-        // CameraDevice.StateListener is called when a CameraDevice changes its state
-        private CameraStateListener mStateListener;
         private class CameraStateListener : CameraDevice.StateCallback
         {
-            public SessionActivity Fragment;
+            public SessionActivity Activity;
             public override void OnOpened(CameraDevice camera)
             {
 
-                if (Fragment != null)
+                if (Activity != null)
                 {
-                    Fragment.mCameraDevice = camera;
-                    Fragment.StartPreview();
-                    Fragment.mOpeningCamera = false;
+                    Activity.cameraDevice = camera;
+                    //Activity.StartPreview();
+                    Activity.openingCamera = false;
                 }
             }
 
             public override void OnDisconnected(CameraDevice camera)
             {
-                if (Fragment != null)
+                if (Activity != null)
                 {
                     camera.Close();
-                    Fragment.mCameraDevice = null;
-                    Fragment.mOpeningCamera = false;
+                    Activity.cameraDevice = null;
+                    Activity.openingCamera = false;
                 }
             }
 
             public override void OnError(CameraDevice camera, CameraError error)
             {
                 camera.Close();
-                if (Fragment != null)
+                if (Activity != null)
                 {
-                    Fragment.mCameraDevice = null;
-                    Activity activity = Fragment;
-                    Fragment.mOpeningCamera = false;
+                    Activity.cameraDevice = null;
+                    Activity activity = Activity;
+                    Activity.openingCamera = false;
                     if (activity != null)
                     {
                         activity.Finish();
@@ -120,7 +99,6 @@ namespace ISpyWithMyLittleEye
 
             }
         }
-
         private class ImageAvailableListener : Java.Lang.Object, ImageReader.IOnImageAvailableListener
         {
             public File File;
@@ -168,7 +146,6 @@ namespace ISpyWithMyLittleEye
                 }
             }
         }
-
         private class CameraCaptureListener : CameraCaptureSession.CaptureCallback
         {
             public SessionActivity Fragment;
@@ -181,12 +158,13 @@ namespace ISpyWithMyLittleEye
                     if (activity != null)
                     {
                         Toast.MakeText(activity, "Saved: " + File.ToString(), ToastLength.Short).Show();
-                        Fragment.StartPreview();
+                        Fragment.AddImage(File.ToString());
+                        new UpdateMediaListTask(Fragment.adapter).Execute();
+                        //Fragment.StartPreview();
                     }
                 }
             }
         }
-
         // This CameraCaptureSession.StateListener uses Action delegates to allow the methods to be defined inline, as they are defined more than once
         private class CameraCaptureStateListener : CameraCaptureSession.StateCallback
         {
@@ -202,55 +180,74 @@ namespace ISpyWithMyLittleEye
             public Action<CameraCaptureSession> OnConfiguredAction;
             public override void OnConfigured(CameraCaptureSession session)
             {
-                if (OnConfiguredAction != null)
-                {
                     OnConfiguredAction(session);
+            }
+
+        }
+        public class ErrorDialog : DialogFragment
+        {
+            public override Dialog OnCreateDialog(Bundle savedInstanceState)
+            {
+                var alert = new AlertDialog.Builder(Activity);
+                alert.SetMessage("This device doesn't support Camera2 API.");
+                alert.SetPositiveButton(Android.Resource.String.Ok, new MyDialogOnClickListener(this));
+                return alert.Show();
+
+            }
+        }
+        private class MyDialogOnClickListener : Java.Lang.Object, IDialogInterfaceOnClickListener
+        {
+            ErrorDialog er;
+            public MyDialogOnClickListener(ErrorDialog e)
+            {
+                er = e;
+            }
+            public void OnClick(IDialogInterface dialogInterface, int i)
+            {
+                er.Activity.Finish();
+            }
+        }
+        private class UpdateMediaListTask : AsyncTask
+        {
+            private MediaListAdapter Adapter;
+            public UpdateMediaListTask(MediaListAdapter adapter)
+            {
+                Adapter = adapter;
+            }
+            protected override Java.Lang.Object DoInBackground(params Java.Lang.Object[] @params)
+            {
+                return null;
+            }
+
+            protected override void OnPostExecute(Java.Lang.Object result)
+            {
+                base.OnPostExecute(result);
+                Adapter.NotifyDataSetChanged();
+            }
+        }
+
+        void UpdateMediaList()
+        {
+            sessionPath = MainActivity.RootPath + "/ses_" + Intent.GetStringExtra(MainActivity.ExtraSessionName) + "/";
+            adapter.Clear();
+            foreach (File f in (new File(sessionPath)).ListFiles())
+            {
+                if (f.Name.EndsWith(".jpg"))
+                {
+                    adapter.Add(f.ToString());
                 }
             }
-
+            adapter.NotifyDataSetChanged();
         }
-
-        protected override void OnCreate(Bundle savedInstanceState)
-        {
-            base.OnCreate(savedInstanceState);
-            SetContentView(Resource.Layout.SessionActivityLayout);
-            mStateListener = new CameraStateListener() { Fragment = this };
-            mSurfaceTextureListener = new Camera2BasicSurfaceTextureListener(this);
-            ORIENTATIONS.Append((int)SurfaceOrientation.Rotation0, 90);
-            ORIENTATIONS.Append((int)SurfaceOrientation.Rotation90, 0);
-            ORIENTATIONS.Append((int)SurfaceOrientation.Rotation180, 270);
-            ORIENTATIONS.Append((int)SurfaceOrientation.Rotation270, 180);
-            mTextureView = FindViewById<TextureView>(Resource.Id.dummyTextureView);
-            mTextureView.SurfaceTextureListener = mSurfaceTextureListener;
-            FindViewById<Button>(Resource.Id.spyButton).SetOnClickListener(this);
-        }
-
-
-        protected override void OnResume()
-        {
-            base.OnResume();
-            OpenCamera();
-        }
-
-        protected override void OnPause()
-        {
-            base.OnPause();
-            if (mCameraDevice != null)
-            {
-                mCameraDevice.Close();
-                mCameraDevice = null;
-            }
-        }
-
         // Opens a CameraDevice. The result is listened to by 'mStateListener'.
         private void OpenCamera()
         {
             Activity activity = this;
-            if (activity == null || activity.IsFinishing || mOpeningCamera)
+            if (activity == null || activity.IsFinishing || openingCamera)
             {
                 return;
             }
-            mOpeningCamera = true;
+            openingCamera = true;
             CameraManager manager = (CameraManager)activity.GetSystemService(Context.CameraService);
             try
             {
@@ -260,10 +257,9 @@ namespace ISpyWithMyLittleEye
                 // StreamConfigurationMap from CameraCharacteristics
                 CameraCharacteristics characteristics = manager.GetCameraCharacteristics(cameraId);
                 StreamConfigurationMap map = (StreamConfigurationMap)characteristics.Get(CameraCharacteristics.ScalerStreamConfigurationMap);
-                mPreviewSize = map.GetOutputSizes(Java.Lang.Class.FromType(typeof(SurfaceTexture)))[0];
 
                 // We are opening the camera with a listener. When it is ready, OnOpened of mStateListener is called.
-                manager.OpenCamera(cameraId, mStateListener, null);
+                manager.OpenCamera(cameraId, stateListener, null);
             }
             catch (CameraAccessException ex)
             {
@@ -275,143 +271,25 @@ namespace ISpyWithMyLittleEye
                 dialog.Show(FragmentManager, "dialog");
             }
         }
-
-        /// <summary>
-        /// Starts the camera previe
-        /// </summary>
-        private void StartPreview()
-        {
-            if (mCameraDevice == null || !mTextureView.IsAvailable || mPreviewSize == null)
-            {
-                return;
-            }
-            try
-            {
-                SurfaceTexture texture = mTextureView.SurfaceTexture;
-                System.Diagnostics.Debug.Assert(texture != null);
-
-                // We configure the size of the default buffer to be the size of the camera preview we want
-                texture.SetDefaultBufferSize(mPreviewSize.Width, mPreviewSize.Height);
-
-                // This is the output Surface we need to start the preview
-                Surface surface = new Surface(texture);
-
-                // We set up a CaptureRequest.Builder with the output Surface
-                mPreviewBuilder = mCameraDevice.CreateCaptureRequest(CameraTemplate.Preview);
-                mPreviewBuilder.AddTarget(surface);
-
-                // Here, we create a CameraCaptureSession for camera preview.
-                mCameraDevice.CreateCaptureSession(new List<Surface>() { surface },
-                    new CameraCaptureStateListener()
-                    {
-                        OnConfigureFailedAction = (CameraCaptureSession session) =>
-                        {
-                            Activity activity = this;
-                            if (activity != null)
-                            {
-                                Toast.MakeText(activity, "Failed", ToastLength.Short).Show();
-                            }
-                        },
-                        OnConfiguredAction = (CameraCaptureSession session) =>
-                        {
-                            mPreviewSession = session;
-                            UpdatePreview();
-                        }
-                    },
-                    null);
-
-
-            }
-            catch (CameraAccessException ex)
-            {
-                Log.WriteLine(LogPriority.Info, "Camera2BasicFragment", ex.StackTrace);
-            }
-        }
-
-        /// <summary>
-        /// Updates the camera preview, StartPreview() needs to be called in advance
-        /// </summary>
-        private void UpdatePreview()
-        {
-            if (mCameraDevice == null)
-            {
-                return;
-            }
-
-            try
-            {
-                // The camera preview can be run in a background thread. This is a Handler for the camere preview
-                SetUpCaptureRequestBuilder(mPreviewBuilder);
-                HandlerThread thread = new HandlerThread("CameraPreview");
-                thread.Start();
-                Handler backgroundHandler = new Handler(thread.Looper);
-
-                // Finally, we start displaying the camera preview
-                mPreviewSession.SetRepeatingRequest(mPreviewBuilder.Build(), null, backgroundHandler);
-            }
-            catch (CameraAccessException ex)
-            {
-                Log.WriteLine(LogPriority.Info, "Camera2BasicFragment", ex.StackTrace);
-            }
-        }
-
-        /// <summary>
-        /// Sets up capture request builder.
-        /// </summary>
-        /// <param name="builder">Builder.</param>
+        // Sets up capture request builder.
         private void SetUpCaptureRequestBuilder(CaptureRequest.Builder builder)
         {
             // In this sample, w just let the camera device pick the automatic settings
             builder.Set(CaptureRequest.ControlMode, new Java.Lang.Integer((int)ControlMode.Auto));
         }
-
-        /// <summary>
-        /// Configures the necessary transformation to mTextureView.
-        /// This method should be called after the camera preciew size is determined in openCamera, and also the size of mTextureView is fixed
-        /// </summary>
-        /// <param name="viewWidth">The width of mTextureView</param>
-        /// <param name="viewHeight">VThe height of mTextureView</param>
-        private void ConfigureTransform(int viewWidth, int viewHeight)
-        {
-            Activity activity = this;
-            if (mTextureView == null || mPreviewSize == null || activity == null)
-            {
-                return;
-            }
-
-            SurfaceOrientation rotation = activity.WindowManager.DefaultDisplay.Rotation;
-            Matrix matrix = new Matrix();
-            RectF viewRect = new RectF(0, 0, viewWidth, viewHeight);
-            RectF bufferRect = new RectF(0, 0, mPreviewSize.Width, mPreviewSize.Height);
-            float centerX = viewRect.CenterX();
-            float centerY = viewRect.CenterY();
-            if (rotation == SurfaceOrientation.Rotation90 || rotation == SurfaceOrientation.Rotation270)
-            {
-                bufferRect.Offset(centerX - bufferRect.CenterX(), centerY - bufferRect.CenterY());
-                matrix.SetRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.Fill);
-                float scale = System.Math.Max((float)viewHeight / mPreviewSize.Height, (float)viewWidth / mPreviewSize.Width);
-                matrix.PostScale(scale, scale, centerX, centerY);
-                matrix.PostRotate(90 * ((int)rotation - 2), centerX, centerY);
-            }
-            mTextureView.SetTransform(matrix);
-        }
-
-        /// <summary>
-        /// Takes a picture.
-        /// </summary>
+        // Takes a picture.
         private void TakePicture()
         {
             try
             {
-                Activity activity = this;
-                if (activity == null || mCameraDevice == null)
+                if (cameraDevice == null)
                 {
                     return;
                 }
-                CameraManager manager = (CameraManager)activity.GetSystemService(Context.CameraService);
+                CameraManager manager = (CameraManager)GetSystemService(Context.CameraService);
 
                 // Pick the best JPEG size that can be captures with this CameraDevice
-                CameraCharacteristics characteristics = manager.GetCameraCharacteristics(mCameraDevice.Id);
+                CameraCharacteristics characteristics = manager.GetCameraCharacteristics(cameraDevice.Id);
                 Size[] jpegSizes = null;
                 if (characteristics != null)
                 {
@@ -428,19 +306,19 @@ namespace ISpyWithMyLittleEye
                 // We use an ImageReader to get a JPEG from CameraDevice
                 // Here, we create a new ImageReader and prepare its Surface as an output from the camera
                 ImageReader reader = ImageReader.NewInstance(width, height, ImageFormatType.Jpeg, 1);
-                List<Surface> outputSurfaces = new List<Surface>(2);
+                List<Surface> outputSurfaces = new List<Surface>();
                 outputSurfaces.Add(reader.Surface);
-                outputSurfaces.Add(new Surface(mTextureView.SurfaceTexture));
+                //outputSurfaces.Add(new Surface(textureView.SurfaceTexture));
 
-                CaptureRequest.Builder captureBuilder = mCameraDevice.CreateCaptureRequest(CameraTemplate.StillCapture);
+                CaptureRequest.Builder captureBuilder = cameraDevice.CreateCaptureRequest(CameraTemplate.StillCapture);
                 captureBuilder.AddTarget(reader.Surface);
                 SetUpCaptureRequestBuilder(captureBuilder);
-                // Orientation
-                SurfaceOrientation rotation = activity.WindowManager.DefaultDisplay.Rotation;
-                captureBuilder.Set(CaptureRequest.JpegOrientation, new Java.Lang.Integer(ORIENTATIONS.Get((int)rotation)));
 
                 // Output file
-                File file = new File(activity.GetExternalFilesDir(null), "pic.jpg");
+                DateTime now = DateTime.Now;
+                string filePath = sessionPath + now.Day.ToString() + "." +  now.Month.ToString() + "." + now.Year.ToString() + "-" 
+                    + now.Hour.ToString() + "_" + now.Minute.ToString() + "_" + now.Second.ToString() + ".jpg";
+                File file = new File(filePath);
 
                 // This listener is called when an image is ready in ImageReader 
                 // Right click on ImageAvailableListener in your IDE and go to its definition
@@ -457,7 +335,7 @@ namespace ISpyWithMyLittleEye
                 // Right click on CameraCaptureListener in your IDE and go to its definition
                 CameraCaptureListener captureListener = new CameraCaptureListener() { Fragment = this, File = file };
 
-                mCameraDevice.CreateCaptureSession(outputSurfaces, new CameraCaptureStateListener()
+                cameraDevice.CreateCaptureSession(outputSurfaces, new CameraCaptureStateListener()
                 {
                     OnConfiguredAction = (CameraCaptureSession session) => {
                         try
@@ -476,40 +354,9 @@ namespace ISpyWithMyLittleEye
                 Log.WriteLine(LogPriority.Info, "Taking picture error: ", ex.StackTrace);
             }
         }
-
-        public void OnClick(View v)
+        public void AddImage(string path)
         {
-            switch (v.Id)
-            {
-                case Resource.Id.spyButton:
-                    TakePicture();
-                    break;
-            }
-        }
-
-        public class ErrorDialog : DialogFragment
-        {
-            public override Dialog OnCreateDialog(Bundle savedInstanceState)
-            {
-                var alert = new AlertDialog.Builder(Activity);
-                alert.SetMessage("This device doesn't support Camera2 API.");
-                alert.SetPositiveButton(Android.Resource.String.Ok, new MyDialogOnClickListener(this));
-                return alert.Show();
-
-            }
-        }
-
-        private class MyDialogOnClickListener : Java.Lang.Object, IDialogInterfaceOnClickListener
-        {
-            ErrorDialog er;
-            public MyDialogOnClickListener(ErrorDialog e)
-            {
-                er = e;
-            }
-            public void OnClick(IDialogInterface dialogInterface, int i)
-            {
-                er.Activity.Finish();
-            }
+            adapter.Add(path);
         }
     }
 }

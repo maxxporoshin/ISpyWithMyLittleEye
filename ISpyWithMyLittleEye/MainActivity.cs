@@ -12,59 +12,171 @@ namespace ISpyWithMyLittleEye
     [Activity(Label = "I Spy With My Little Eye", MainLauncher = true, Icon = "@drawable/icon")]
     public class MainActivity : Activity
     {
-        Button addSessionButton;
-        ListView sessionList;
-        TextView nameEdit;
-        List<String> sessions;
-        static public string RootPath { get; set; }
-        
+        public const string ExtraSessionName = "SESSION_NAME";
+        public const string SessionFolderPrefix = "ses_";
+        public static string RootPath { get; set; }
+
+        private Button addSessionButton;
+        private ListView sessionListView;
+        private TextView newSessionDialogNameEdit;
+        private View newSessionDialogView;
+        private List<string> sessionList;
+        private ArrayAdapter<string> sessionListAdapter;
+        private AlertDialog newSessionDialog;
+
         protected override void OnCreate(Bundle bundle)
         {
             base.OnCreate(bundle);
-
-            // Set our view from the "main" layout resource
             SetContentView(Resource.Layout.Main);
-            
-            RootPath = GetExternalFilesDir(null).ToString();
+            InitializeAll();
+        }
 
-            sessionList = FindViewById<ListView>(Resource.Id.sessionList);
+        private void InitializeAll()
+        {
+            SetRootPath(GetExternalFilesDir(null).ToString());
+            InitializeUI();
+            InitializeEventHandlers();
+        }
 
-			sessions = new List<String> ();
+        private void InitializeEventHandlers()
+        {
+            AddSessionButtonClickHandler();
+            AddSessionListItemClickHandler();
+        }
 
-            var adapter = new ArrayAdapter<String>(this, Android.Resource.Layout.SimpleListItem1, sessions);
-            sessionList.Adapter = adapter;
+        private void InitializeUI()
+        {
+            InitializeSessionList();
+            CreateNewSessionDialog();
+            InitializeNewSessionButton();
+        }
 
-            var inflater = (LayoutInflater)GetSystemService(LayoutInflaterService);
-            var view = inflater.Inflate(Resource.Layout.AddSessionDialog, null);
-            nameEdit = view.FindViewById<TextView>(Resource.Id.sessionNameEdit);
-            var dialogBuilder = new AlertDialog.Builder(this)
-                .SetView(view)
-                .SetPositiveButton("Ok", (sender, args) => {
-                    string name = nameEdit.Text;
-                    adapter.Add(name);
-                    nameEdit.Text = "";
-                    Directory.CreateDirectory(RootPath + "/" + name);
-                })
-                .SetNegativeButton("Nope", (sender, args) => {
-                    nameEdit.Text = "";
-                });
-            var dialog = dialogBuilder.Create();
+        private void InitializeNewSessionButton()
+        {
             addSessionButton = FindViewById<Button>(Resource.Id.addSessionButton);
+        }
+
+        private void AddSessionButtonClickHandler()
+        {
             addSessionButton.Click += (sender, args) =>
             {
-                dialog.Show();
-            };
-            sessionList.ItemClick += (sender, args) => {
-                string item = adapter.GetItem(args.Position);
-                var session = new Intent(this, typeof(SessionActivity));
-                StartActivity(session);
+                ShowNewSessionDialog();
             };
         }
 
-        protected override void OnPause()
+        private void InitializeSessionList()
         {
-            base.OnPause();
+            InitializeAdapter();
+            sessionListView = FindViewById<ListView>(Resource.Id.sessionList);
+            sessionListView.Adapter = sessionListAdapter;
+            UpdateSessions();
+        }
 
+        private void InitializeAdapter()
+        {
+            sessionList = new List<String>();
+            sessionListAdapter = new ArrayAdapter<String>(this, Android.Resource.Layout.SimpleListItem1, sessionList);
+        }
+
+        private void AddSessionListItemClickHandler()
+        {
+            sessionListView.ItemClick += (sender, args) =>
+            {
+                StartSessionActivity(args);
+            };
+        }
+
+        private void SetRootPath(string path)
+        {
+            RootPath = path;
+        }
+
+        private void StartSessionActivity(AdapterView.ItemClickEventArgs args)
+        {
+            var session = new Intent(this, typeof(SessionActivity));
+            session.PutExtra(ExtraSessionName, sessionListAdapter.GetItem(args.Position).ToString());
+            StartActivity(session);
+        }
+
+        private void ShowNewSessionDialog()
+        {
+            newSessionDialog.Show();
+        }
+
+        private void CreateNewSessionDialog()
+        {
+            InitializeNewSessionDialogViews();
+            AlertDialog.Builder dialogBuilder = CreateNewSessionDialogBuilder();
+            newSessionDialog = dialogBuilder.Create();
+        }
+
+        private void InitializeNewSessionDialogViews()
+        {
+            var inflater = (LayoutInflater)GetSystemService(LayoutInflaterService);
+            newSessionDialogView = inflater.Inflate(Resource.Layout.AddSessionDialog, null);
+            newSessionDialogNameEdit = newSessionDialogView.FindViewById<TextView>(Resource.Id.sessionNameEdit);
+        }
+
+        private AlertDialog.Builder CreateNewSessionDialogBuilder()
+        {
+            AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            ConfigureNewSessionDialogBuilder(builder);
+            return builder;
+        }
+
+        private void ConfigureNewSessionDialogBuilder(AlertDialog.Builder builder)
+        {
+            builder.SetView(newSessionDialogView);
+            SetNewSessionDialogBuilderPositive(builder);
+            SetNewSessionDialogBuilderNegative(builder);
+        }
+
+        private void SetNewSessionDialogBuilderNegative(AlertDialog.Builder builder)
+        {
+            builder.SetNegativeButton("Nope", (sender, args) =>
+            {
+                ClearNewSessionDialogNameEdit();
+            });
+        }
+
+        private void SetNewSessionDialogBuilderPositive(AlertDialog.Builder builder)
+        {
+            builder.SetPositiveButton("Ok", (sender, args) =>
+            {
+                AddSession(newSessionDialogNameEdit.Text);
+                ClearNewSessionDialogNameEdit();
+            });
+        }
+
+        private void ClearNewSessionDialogNameEdit()
+        {
+            newSessionDialogNameEdit.Text = "";
+        }
+
+        private void AddSession(string name)
+        {
+            if (name.Length > 0)
+            {
+                sessionListAdapter.Add(name);
+                Directory.CreateDirectory(RootPath + "/" + SessionFolderPrefix + name);
+            }
+        }
+
+        private void UpdateSessions()
+        {
+            sessionListAdapter.Clear();
+            foreach (string s in Directory.GetDirectories(RootPath))
+            {
+                AddSessionFromDirectory(Path.GetFileName(s));
+            }
+        }
+
+        private void AddSessionFromDirectory(string directory)
+        {
+            if (directory.StartsWith(SessionFolderPrefix))
+            {
+                AddSession(directory.Substring(SessionFolderPrefix.Length));
+            }
         }
     }
 }

@@ -6,7 +6,7 @@
     android:minWidth="25px"
     android:minHeight="25px">
     <Button
-        android:text="Button"
+        android:text="New session"
         android:id="@+id/addSessionButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
