@@ -72,14 +72,14 @@ namespace ISpyWithMyLittleEye
 			// aapt resource value: 0x7f050007
 			public const int mediaList = 2131034119;
 			
+			// aapt resource value: 0x7f050005
+			public const int photoButton = 2131034117;
+			
 			// aapt resource value: 0x7f050002
 			public const int sessionList = 2131034114;
 			
 			// aapt resource value: 0x7f050000
 			public const int sessionNameEdit = 2131034112;
-			
-			// aapt resource value: 0x7f050005
-			public const int spyButton = 2131034117;
 			
 			// aapt resource value: 0x7f050006
 			public const int videoButton = 2131034118;

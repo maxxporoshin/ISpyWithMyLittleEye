@@ -23,17 +23,16 @@ namespace ISpyWithMyLittleEye
         private List<string> images;
         private MediaListAdapter adapter;
         private ListView mediaList;
+        private Button photoButton;
+        private Button videoButton;
         private string sessionPath;
-        // A reference to the opened CameraDevice
         private CameraDevice cameraDevice;
-        // True if the app is currently trying to open the camera
         private bool openingCamera;
-        // CameraDevice.StateListener is called when a CameraDevice changes its state
         private CameraStateListener stateListener;
         private HandlerThread thread;
         private Handler backgroundHandler;
         private MediaRecorder mediaRecorder;
-        private bool recordingVideo = false;
+        private bool recordingVideo;
 
         protected override void OnCreate(Bundle savedInstanceState)
         {
@@ -45,19 +44,22 @@ namespace ISpyWithMyLittleEye
         private void InitializeAll()
         {
             stateListener = new CameraStateListener(this);
+            sessionPath = MainActivity.RootPath + "/ses_" + Intent.GetStringExtra(MainActivity.ExtraSessionName) + "/";
             InitializeUI();
         }
 
         private void InitializeUI()
         {
+            photoButton = FindViewById<Button>(Resource.Id.photoButton);
+            videoButton = FindViewById<Button>(Resource.Id.videoButton);
             InitializeEventHandlers();
             InitializeSessionList();
         }
 
         private void InitializeEventHandlers()
         {
-            FindViewById<Button>(Resource.Id.spyButton).Click += (sender, args) => { TakePicture(); };
-            FindViewById<Button>(Resource.Id.videoButton).Click += (sender, args) =>
+            photoButton.Click += (sender, args) => { TakePicture(); };
+            videoButton.Click += (sender, args) =>
             {
                 if (recordingVideo)
                 {
@@ -73,8 +75,11 @@ namespace ISpyWithMyLittleEye
 
         private void StopRecord()
         {
+            //mediaRecorder.Stop();
+            //mediaRecorder.Reset();
             CloseCamera();
             OpenCamera();
+            videoButton.Text = "Start record";
             recordingVideo = false;
         }
 
@@ -227,7 +232,6 @@ namespace ISpyWithMyLittleEye
                 }
             }
         }
-        // This CameraCaptureSession.StateListener uses Action delegates to allow the methods to be defined inline, as they are defined more than once
         private class CameraCaptureStateListener : CameraCaptureSession.StateCallback
         {
             public Action<CameraCaptureSession> OnConfigureFailedAction;
@@ -257,29 +261,6 @@ namespace ISpyWithMyLittleEye
                 OnConfiguredAction(session);
             }
 
-        }
-        public class ErrorDialog : DialogFragment
-        {
-            public override Dialog OnCreateDialog(Bundle savedInstanceState)
-            {
-                var alert = new AlertDialog.Builder(Activity);
-                alert.SetMessage("This device doesn't support Camera2 API.");
-                alert.SetPositiveButton(Android.Resource.String.Ok, new MyDialogOnClickListener(this));
-                return alert.Show();
-
-            }
-        }
-        private class MyDialogOnClickListener : Java.Lang.Object, IDialogInterfaceOnClickListener
-        {
-            ErrorDialog er;
-            public MyDialogOnClickListener(ErrorDialog e)
-            {
-                er = e;
-            }
-            public void OnClick(IDialogInterface dialogInterface, int i)
-            {
-                er.Activity.Finish();
-            }
         }
         private class UpdateMediaListTask : AsyncTask
         {
@@ -323,7 +304,6 @@ namespace ISpyWithMyLittleEye
 
         void UpdateMediaList()
         {
-            sessionPath = MainActivity.RootPath + "/ses_" + Intent.GetStringExtra(MainActivity.ExtraSessionName) + "/";
             adapter.Clear();
             foreach (File f in (new File(sessionPath)).ListFiles())
             {
@@ -334,47 +314,31 @@ namespace ISpyWithMyLittleEye
             }
             adapter.NotifyDataSetChanged();
         }
-        // Opens a CameraDevice. The result is listened to by 'mStateListener'.
         private void OpenCamera()
         {
-            Activity activity = this;
-            if (activity == null || activity.IsFinishing || openingCamera)
+            if (openingCamera)
             {
                 return;
             }
             mediaRecorder = new MediaRecorder();
-
             openingCamera = true;
-            CameraManager manager = (CameraManager)activity.GetSystemService(Context.CameraService);
+            CameraManager manager = (CameraManager)GetSystemService(CameraService);
             try
             {
                 string cameraId = manager.GetCameraIdList()[0];
-
-                // To get a list of available sizes of camera preview, we retrieve an instance of
-                // StreamConfigurationMap from CameraCharacteristics
                 CameraCharacteristics characteristics = manager.GetCameraCharacteristics(cameraId);
                 StreamConfigurationMap map = (StreamConfigurationMap)characteristics.Get(CameraCharacteristics.ScalerStreamConfigurationMap);
-
-                // We are opening the camera with a listener. When it is ready, OnOpened of mStateListener is called.
                 manager.OpenCamera(cameraId, stateListener, backgroundHandler);
             }
             catch (CameraAccessException ex)
             {
-                Toast.MakeText(activity, "Cannot access the camera.", ToastLength.Short).Show();
-            }
-            catch (NullPointerException)
-            {
-                var dialog = new ErrorDialog();
-                dialog.Show(FragmentManager, "dialog");
+                Toast.MakeText(this, "Cannot access the camera.", ToastLength.Short).Show();
             }
         }
-        // Sets up capture request builder.
         private void SetUpCaptureRequestBuilder(CaptureRequest.Builder builder)
         {
-            // In this sample, w just let the camera device pick the automatic settings
-            builder.Set(CaptureRequest.ControlMode, new Java.Lang.Integer((int)ControlMode.Auto));
+            builder.Set(CaptureRequest.ControlMode, new Integer((int)ControlMode.Auto));
         }
-        // Takes a picture.
         private void TakePicture()
         {
             try
@@ -385,7 +349,6 @@ namespace ISpyWithMyLittleEye
                 }
                 CameraManager manager = (CameraManager)GetSystemService(Context.CameraService);
 
-                // Pick the best JPEG size that can be captures with this CameraDevice
                 CameraCharacteristics characteristics = manager.GetCameraCharacteristics(cameraDevice.Id);
                 Size[] jpegSizes = null;
                 if (characteristics != null)
@@ -400,8 +363,6 @@ namespace ISpyWithMyLittleEye
                     height = jpegSizes[0].Height;
                 }
 
-                // We use an ImageReader to get a JPEG from CameraDevice
-                // Here, we create a new ImageReader and prepare its Surface as an output from the camera
                 ImageReader reader = ImageReader.NewInstance(width, height, ImageFormatType.Jpeg, 1);
                 List<Surface> outputSurfaces = new List<Surface>();
                 outputSurfaces.Add(reader.Surface);
@@ -410,26 +371,14 @@ namespace ISpyWithMyLittleEye
                 captureBuilder.AddTarget(reader.Surface);
                 SetUpCaptureRequestBuilder(captureBuilder);
 
-                // Output file
                 DateTime now = DateTime.Now;
-                string filePath = sessionPath + now.Day.ToString() + "." +  now.Month.ToString() + "." + now.Year.ToString() + "-" 
+                string filePath = sessionPath + "-" + now.Day.ToString() + "." +  now.Month.ToString() + "." + now.Year.ToString() + "-" 
                     + now.Hour.ToString() + "_" + now.Minute.ToString() + "_" + now.Second.ToString() + ".jpg";
                 File file = new File(filePath);
 
-                // This listener is called when an image is ready in ImageReader 
-                // Right click on ImageAvailableListener in your IDE and go to its definition
                 ImageAvailableListener readerListener = new ImageAvailableListener() { File = file };
-
-                // We create a Handler since we want to handle the resulting JPEG in a background thread
-                /*HandlerThread thread = new HandlerThread("CameraPicture");
-                thread.Start();
-                Handler backgroundHandler = new Handler(thread.Looper);*/
                 reader.SetOnImageAvailableListener(readerListener, backgroundHandler);
-
-                //This listener is called when the capture is completed
-                // Note that the JPEG data is not available in this listener, but in the ImageAvailableListener we created above
-                // Right click on CameraCaptureListener in your IDE and go to its definition
-                CameraCaptureListener captureListener = new CameraCaptureListener() { Fragment = this, File = file };
+                CameraCaptureListener captureListener = new CameraCaptureListener() { Activity = this, File = file };
 
                 cameraDevice.CreateCaptureSession(outputSurfaces, new CameraCaptureStateListener()
                 {
@@ -454,11 +403,11 @@ namespace ISpyWithMyLittleEye
         {
             mediaRecorder.SetVideoSource(VideoSource.Surface);
             mediaRecorder.SetOutputFormat(OutputFormat.Mpeg4);
-            mediaRecorder.SetVideoEncoder(VideoEncoder.H264);
-            mediaRecorder.SetVideoSize(640, 480);
-            mediaRecorder.SetVideoFrameRate(30);
             mediaRecorder.SetOutputFile(new File(sessionPath + "/video.mp4").AbsolutePath);
             mediaRecorder.SetVideoEncodingBitRate(10000000);
+            mediaRecorder.SetVideoFrameRate(30);
+            mediaRecorder.SetVideoSize(640, 480);
+            mediaRecorder.SetVideoEncoder(VideoEncoder.H264);              
             mediaRecorder.Prepare();
         }
         private void StartRecord()
@@ -467,6 +416,7 @@ namespace ISpyWithMyLittleEye
             Surface recordSurface = mediaRecorder.Surface;
             CaptureRequest.Builder builder = cameraDevice.CreateCaptureRequest(CameraTemplate.Record);
             builder.AddTarget(recordSurface);
+            SetUpCaptureRequestBuilder(builder);
             List<Surface> surfaces = new List<Surface>();
             surfaces.Add(recordSurface);
             cameraDevice.CreateCaptureSession(surfaces, new CameraCapturerRecordStateListener()
@@ -475,15 +425,16 @@ namespace ISpyWithMyLittleEye
                 {
                     try
                     {
-                        session.Capture(builder.Build(), null, null);
+                        session.SetRepeatingRequest(builder.Build(), null, backgroundHandler);
                     }
                     catch (CameraAccessException ex)
                     {
                         Log.WriteLine(LogPriority.Info, "Capture Session error: ", ex.ToString());
                     }
                 }
-            }, null);
+            }, backgroundHandler);
             mediaRecorder.Start();
+            videoButton.Text = "Stop record";
             recordingVideo = true;
         }
         public void AddImage(string path)
