@@ -30,6 +30,8 @@ namespace ISpyWithMyLittleEye
         private bool openingCamera;
         // CameraDevice.StateListener is called when a CameraDevice changes its state
         private CameraStateListener stateListener;
+        private HandlerThread thread;
+        private Handler backgroundHandler;
 
         protected override void OnCreate(Bundle savedInstanceState)
         {
@@ -47,6 +49,7 @@ namespace ISpyWithMyLittleEye
         protected override void OnResume()
         {
             base.OnResume();
+            StartBackgroundThread();
             OpenCamera();
         }
         protected override void OnPause()
@@ -57,6 +60,7 @@ namespace ISpyWithMyLittleEye
                 cameraDevice.Close();
                 cameraDevice = null;
             }
+            StopBackgroundThread();
         }
 
         private class CameraStateListener : CameraDevice.StateCallback
@@ -160,7 +164,6 @@ namespace ISpyWithMyLittleEye
                         Toast.MakeText(activity, "Saved: " + File.ToString(), ToastLength.Short).Show();
                         Fragment.AddImage(File.ToString());
                         new UpdateMediaListTask(Fragment.adapter).Execute();
-                        //Fragment.StartPreview();
                     }
                 }
             }
@@ -226,6 +229,27 @@ namespace ISpyWithMyLittleEye
             }
         }
 
+        private void StartBackgroundThread()
+        {
+            thread = new HandlerThread("CameraThread");
+            thread.Start();
+            backgroundHandler = new Handler(thread.Looper);
+        }
+
+        private void StopBackgroundThread()
+        {
+            thread.QuitSafely();
+            try
+            {
+                thread.Join();
+                thread = null;
+                backgroundHandler = null;
+            } catch (InterruptedException e)
+            {
+                e.PrintStackTrace();
+            }
+        }
+
         void UpdateMediaList()
         {
             sessionPath = MainActivity.RootPath + "/ses_" + Intent.GetStringExtra(MainActivity.ExtraSessionName) + "/";
@@ -259,7 +283,7 @@ namespace ISpyWithMyLittleEye
                 StreamConfigurationMap map = (StreamConfigurationMap)characteristics.Get(CameraCharacteristics.ScalerStreamConfigurationMap);
 
                 // We are opening the camera with a listener. When it is ready, OnOpened of mStateListener is called.
-                manager.OpenCamera(cameraId, stateListener, null);
+                manager.OpenCamera(cameraId, stateListener, backgroundHandler);
             }
             catch (CameraAccessException ex)
             {
@@ -308,7 +332,6 @@ namespace ISpyWithMyLittleEye
                 ImageReader reader = ImageReader.NewInstance(width, height, ImageFormatType.Jpeg, 1);
                 List<Surface> outputSurfaces = new List<Surface>();
                 outputSurfaces.Add(reader.Surface);
-                //outputSurfaces.Add(new Surface(textureView.SurfaceTexture));
 
                 CaptureRequest.Builder captureBuilder = cameraDevice.CreateCaptureRequest(CameraTemplate.StillCapture);
                 captureBuilder.AddTarget(reader.Surface);
@@ -325,9 +348,9 @@ namespace ISpyWithMyLittleEye
                 ImageAvailableListener readerListener = new ImageAvailableListener() { File = file };
 
                 // We create a Handler since we want to handle the resulting JPEG in a background thread
-                HandlerThread thread = new HandlerThread("CameraPicture");
+                /*HandlerThread thread = new HandlerThread("CameraPicture");
                 thread.Start();
-                Handler backgroundHandler = new Handler(thread.Looper);
+                Handler backgroundHandler = new Handler(thread.Looper);*/
                 reader.SetOnImageAvailableListener(readerListener, backgroundHandler);
 
                 //This listener is called when the capture is completed
