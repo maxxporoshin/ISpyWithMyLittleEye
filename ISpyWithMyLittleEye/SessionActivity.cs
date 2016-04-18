@@ -32,20 +32,66 @@ namespace ISpyWithMyLittleEye
         private CameraStateListener stateListener;
         private HandlerThread thread;
         private Handler backgroundHandler;
+        private MediaRecorder mediaRecorder;
+        private bool recordingVideo = false;
 
         protected override void OnCreate(Bundle savedInstanceState)
         {
             base.OnCreate(savedInstanceState);
             SetContentView(Resource.Layout.SessionActivityLayout);
-            stateListener = new CameraStateListener() { Activity = this };
+            InitializeAll();
+        }
+
+        private void InitializeAll()
+        {
+            stateListener = new CameraStateListener(this);
+            InitializeUI();
+        }
+
+        private void InitializeUI()
+        {
+            InitializeEventHandlers();
+            InitializeSessionList();
+        }
+
+        private void InitializeEventHandlers()
+        {
             FindViewById<Button>(Resource.Id.spyButton).Click += (sender, args) => { TakePicture(); };
-            images = new List<string>();
-            adapter = new MediaListAdapter(this, images);
+            FindViewById<Button>(Resource.Id.videoButton).Click += (sender, args) =>
+            {
+                if (recordingVideo)
+                {
+                    StopRecord();
+                }
+                else
+                {
+                    StartRecord();
+
+                }
+            };
+        }
+
+        private void StopRecord()
+        {
+            CloseCamera();
+            OpenCamera();
+            recordingVideo = false;
+        }
+
+        private void InitializeSessionList()
+        {
+            InitializeAdapter();
             mediaList = FindViewById<ListView>(Resource.Id.mediaList);
             mediaList.Adapter = adapter;
             UpdateMediaList();
-
         }
+
+        private void InitializeAdapter()
+        {
+            images = new List<string>();
+            adapter = new MediaListAdapter(this, images);
+        }
+
         protected override void OnResume()
         {
             base.OnResume();
@@ -55,24 +101,47 @@ namespace ISpyWithMyLittleEye
         protected override void OnPause()
         {
             base.OnPause();
+            CloseCamera();
+            StopBackgroundThread();
+        }
+
+        private void CloseCamera()
+        {
+            CloseCameraDevice();
+            ReleaseMediaRecorder();
+        }
+
+        private void ReleaseMediaRecorder()
+        {
+            if (mediaRecorder != null)
+            {
+                mediaRecorder.Release();
+                mediaRecorder = null;
+            }
+        }
+
+        private void CloseCameraDevice()
+        {
             if (cameraDevice != null)
             {
                 cameraDevice.Close();
                 cameraDevice = null;
             }
-            StopBackgroundThread();
         }
 
         private class CameraStateListener : CameraDevice.StateCallback
         {
             public SessionActivity Activity;
+            public CameraStateListener(SessionActivity context)
+            {
+                Activity = context;
+            }
             public override void OnOpened(CameraDevice camera)
             {
 
                 if (Activity != null)
                 {
                     Activity.cameraDevice = camera;
-                    //Activity.StartPreview();
                     Activity.openingCamera = false;
                 }
             }
@@ -93,12 +162,7 @@ namespace ISpyWithMyLittleEye
                 if (Activity != null)
                 {
                     Activity.cameraDevice = null;
-                    Activity activity = Activity;
                     Activity.openingCamera = false;
-                    if (activity != null)
-                    {
-                        activity.Finish();
-                    }
                 }
 
             }
@@ -152,19 +216,14 @@ namespace ISpyWithMyLittleEye
         }
         private class CameraCaptureListener : CameraCaptureSession.CaptureCallback
         {
-            public SessionActivity Fragment;
+            public SessionActivity Activity;
             public File File;
             public override void OnCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result)
             {
-                if (Fragment != null && File != null)
+                if (Activity != null && File != null)
                 {
-                    Activity activity = Fragment;
-                    if (activity != null)
-                    {
-                        Toast.MakeText(activity, "Saved: " + File.ToString(), ToastLength.Short).Show();
-                        Fragment.AddImage(File.ToString());
-                        new UpdateMediaListTask(Fragment.adapter).Execute();
-                    }
+                    Activity.AddImage(File.ToString());
+                    new UpdateMediaListTask(Activity.adapter).Execute();
                 }
             }
         }
@@ -174,16 +233,28 @@ namespace ISpyWithMyLittleEye
             public Action<CameraCaptureSession> OnConfigureFailedAction;
             public override void OnConfigureFailed(CameraCaptureSession session)
             {
-                if (OnConfigureFailedAction != null)
-                {
-                    OnConfigureFailedAction(session);
-                }
+                OnConfigureFailedAction(session);
             }
 
             public Action<CameraCaptureSession> OnConfiguredAction;
             public override void OnConfigured(CameraCaptureSession session)
             {
-                    OnConfiguredAction(session);
+                OnConfiguredAction(session);
+            }
+
+        }
+        private class CameraCapturerRecordStateListener : CameraCaptureSession.StateCallback
+        {
+            public Action<CameraCaptureSession> OnConfigureFailedAction;
+            public override void OnConfigureFailed(CameraCaptureSession session)
+            {
+                OnConfigureFailedAction(session);
+            }
+
+            public Action<CameraCaptureSession> OnConfiguredAction;
+            public override void OnConfigured(CameraCaptureSession session)
+            {
+                OnConfiguredAction(session);
             }
 
         }
@@ -271,6 +342,8 @@ namespace ISpyWithMyLittleEye
             {
                 return;
             }
+            mediaRecorder = new MediaRecorder();
+
             openingCamera = true;
             CameraManager manager = (CameraManager)activity.GetSystemService(Context.CameraService);
             try
@@ -376,6 +449,42 @@ namespace ISpyWithMyLittleEye
             {
                 Log.WriteLine(LogPriority.Info, "Taking picture error: ", ex.StackTrace);
             }
+        }
+        private void SetupMediaRecorder()
+        {
+            mediaRecorder.SetVideoSource(VideoSource.Surface);
+            mediaRecorder.SetOutputFormat(OutputFormat.Mpeg4);
+            mediaRecorder.SetVideoEncoder(VideoEncoder.H264);
+            mediaRecorder.SetVideoSize(640, 480);
+            mediaRecorder.SetVideoFrameRate(30);
+            mediaRecorder.SetOutputFile(new File(sessionPath + "/video.mp4").AbsolutePath);
+            mediaRecorder.SetVideoEncodingBitRate(10000000);
+            mediaRecorder.Prepare();
+        }
+        private void StartRecord()
+        {
+            SetupMediaRecorder();
+            Surface recordSurface = mediaRecorder.Surface;
+            CaptureRequest.Builder builder = cameraDevice.CreateCaptureRequest(CameraTemplate.Record);
+            builder.AddTarget(recordSurface);
+            List<Surface> surfaces = new List<Surface>();
+            surfaces.Add(recordSurface);
+            cameraDevice.CreateCaptureSession(surfaces, new CameraCapturerRecordStateListener()
+            {
+                OnConfiguredAction = (CameraCaptureSession session) =>
+                {
+                    try
+                    {
+                        session.Capture(builder.Build(), null, null);
+                    }
+                    catch (CameraAccessException ex)
+                    {
+                        Log.WriteLine(LogPriority.Info, "Capture Session error: ", ex.ToString());
+                    }
+                }
+            }, null);
+            mediaRecorder.Start();
+            recordingVideo = true;
         }
         public void AddImage(string path)
         {
