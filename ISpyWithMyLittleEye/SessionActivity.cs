@@ -401,12 +401,19 @@ namespace ISpyWithMyLittleEye
         }
         private void SetupMediaRecorder()
         {
+            CameraManager manager = (CameraManager)GetSystemService(CameraService);
+            CameraCharacteristics characteristics = manager.GetCameraCharacteristics(cameraDevice.Id);
+            StreamConfigurationMap configs = (StreamConfigurationMap)characteristics.Get(
+                    CameraCharacteristics.ScalerStreamConfigurationMap);
+            Size[] sizes = configs.GetOutputSizes(Class.FromType(typeof(MediaRecorder)));
+            int width = sizes[0].Width;
+            int height = sizes[0].Height;
             mediaRecorder.SetVideoSource(VideoSource.Surface);
             mediaRecorder.SetOutputFormat(OutputFormat.Mpeg4);
             mediaRecorder.SetOutputFile(new File(sessionPath + "/video.mp4").AbsolutePath);
             mediaRecorder.SetVideoEncodingBitRate(10000000);
             mediaRecorder.SetVideoFrameRate(30);
-            mediaRecorder.SetVideoSize(640, 480);
+            mediaRecorder.SetVideoSize(width, height);
             mediaRecorder.SetVideoEncoder(VideoEncoder.H264);              
             mediaRecorder.Prepare();
         }

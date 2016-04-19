@@ -60,29 +60,29 @@ namespace ISpyWithMyLittleEye
 		public partial class Id
 		{
 			
-			// aapt resource value: 0x7f050001
-			public const int addSessionButton = 2131034113;
-			
-			// aapt resource value: 0x7f050004
-			public const int image = 2131034116;
+			// aapt resource value: 0x7f050000
+			public const int addSessionButton = 2131034112;
 			
 			// aapt resource value: 0x7f050003
-			public const int linearLayout1 = 2131034115;
-			
-			// aapt resource value: 0x7f050007
-			public const int mediaList = 2131034119;
-			
-			// aapt resource value: 0x7f050005
-			public const int photoButton = 2131034117;
+			public const int image = 2131034115;
 			
 			// aapt resource value: 0x7f050002
-			public const int sessionList = 2131034114;
-			
-			// aapt resource value: 0x7f050000
-			public const int sessionNameEdit = 2131034112;
+			public const int linearLayout1 = 2131034114;
 			
 			// aapt resource value: 0x7f050006
-			public const int videoButton = 2131034118;
+			public const int mediaList = 2131034118;
+			
+			// aapt resource value: 0x7f050004
+			public const int photoButton = 2131034116;
+			
+			// aapt resource value: 0x7f050001
+			public const int sessionList = 2131034113;
+			
+			// aapt resource value: 0x7f050007
+			public const int sessionNameEdit = 2131034119;
+			
+			// aapt resource value: 0x7f050005
+			public const int videoButton = 2131034117;
 			
 			static Id()
 			{
@@ -98,16 +98,16 @@ namespace ISpyWithMyLittleEye
 		{
 			
 			// aapt resource value: 0x7f030000
-			public const int AddSessionDialog = 2130903040;
+			public const int Main = 2130903040;
 			
 			// aapt resource value: 0x7f030001
-			public const int Main = 2130903041;
+			public const int MediaListItem = 2130903041;
 			
 			// aapt resource value: 0x7f030002
-			public const int MediaListItem = 2130903042;
+			public const int SessionActivityLayout = 2130903042;
 			
 			// aapt resource value: 0x7f030003
-			public const int SessionActivityLayout = 2130903043;
+			public const int SessionNameDialog = 2130903043;
 			
 			static Layout()
 			{

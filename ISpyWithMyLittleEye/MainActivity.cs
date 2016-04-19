@@ -5,30 +5,70 @@ using Android.Views;
 using Android.Widget;
 using Android.OS;
 using System.Collections.Generic;
-using System.IO;
+using Java.IO;
 
 namespace ISpyWithMyLittleEye
 {
     [Activity(Label = "I Spy With My Little Eye", MainLauncher = true, Icon = "@drawable/icon")]
-    public class MainActivity : Activity
+    public class MainActivity : Activity, SessionNameDialogFragment.SessionNameDialogListener
     {
         public const string ExtraSessionName = "SESSION_NAME";
         public const string SessionFolderPrefix = "ses_";
         public static string RootPath { get; set; }
 
+        private readonly string[] contextMenuItems = { "Rename", "Delete" };
         private Button addSessionButton;
         private ListView sessionListView;
-        private TextView newSessionDialogNameEdit;
-        private View newSessionDialogView;
+        private TextView sessionNameDialogTextView;
         private List<string> sessionList;
         private ArrayAdapter<string> sessionListAdapter;
-        private AlertDialog newSessionDialog;
 
         protected override void OnCreate(Bundle bundle)
         {
             base.OnCreate(bundle);
             SetContentView(Resource.Layout.Main);
             InitializeAll();
+        }
+
+        public override void OnCreateContextMenu(IContextMenu menu, View v, IContextMenuContextMenuInfo menuInfo)
+        {
+            base.OnCreateContextMenu(menu, v, menuInfo);
+            if (v.Id == sessionListView.Id)
+            {
+                AdapterView.AdapterContextMenuInfo info = (AdapterView.AdapterContextMenuInfo)menuInfo;
+                menu.SetHeaderTitle(sessionListAdapter.GetItem(info.Position));
+                for (int i = 0; i < contextMenuItems.Length; i++)
+                {
+                    menu.Add(Menu.None, i, i, contextMenuItems[i]);
+                }
+            }
+        }
+
+        public override bool OnContextItemSelected(IMenuItem item)
+        {
+            AdapterView.AdapterContextMenuInfo info = (AdapterView.AdapterContextMenuInfo)item.MenuInfo;
+            string session = sessionListAdapter.GetItem(info.Position);
+            //Rename
+            if (item.ItemId == 0)
+            {
+                ShowSessionNameDialog(session);
+                GetSessionFolder(session).RenameTo(GetSessionFolder(GetSessionNameDialogText()));
+                UpdateSessions();
+            }
+            //Delete
+            if (item.ItemId == 1)
+            {
+                new AlertDialog.Builder(this).SetTitle("Delete session")
+                    .SetMessage("You sure?")
+                    .SetPositiveButton("Yeah", (sender, args) =>
+                    {
+                        GetSessionFolder(session).Delete();
+                        UpdateSessions();
+                    })
+                    .SetNegativeButton("Nope", (sender, args) => { })
+                    .Show();
+            }
+            return base.OnContextItemSelected(item);
         }
 
         private void InitializeAll()
@@ -46,9 +86,15 @@ namespace ISpyWithMyLittleEye
 
         private void InitializeUI()
         {
+            InitializeSessionNameDialogTextView();
             InitializeSessionList();
-            CreateNewSessionDialog();
             InitializeNewSessionButton();
+        }
+
+        private void InitializeSessionNameDialogTextView()
+        {
+            var view = ((LayoutInflater)GetSystemService(LayoutInflaterService)).Inflate(Resource.Layout.SessionNameDialog, null);
+            sessionNameDialogTextView = view.FindViewById<TextView>(Resource.Id.sessionNameEdit);
         }
 
         private void InitializeNewSessionButton()
@@ -60,16 +106,17 @@ namespace ISpyWithMyLittleEye
         {
             addSessionButton.Click += (sender, args) =>
             {
-                ShowNewSessionDialog();
+                ShowSessionNameDialog();
             };
         }
-
+        
         private void InitializeSessionList()
         {
             InitializeAdapter();
             sessionListView = FindViewById<ListView>(Resource.Id.sessionList);
             sessionListView.Adapter = sessionListAdapter;
             UpdateSessions();
+            RegisterForContextMenu(sessionListView);
         }
 
         private void InitializeAdapter()
@@ -98,85 +145,57 @@ namespace ISpyWithMyLittleEye
             StartActivity(session);
         }
 
-        private void ShowNewSessionDialog()
+        private void ShowSessionNameDialog(string session = "")
         {
-            newSessionDialog.Show();
-        }
-
-        private void CreateNewSessionDialog()
-        {
-            InitializeNewSessionDialogViews();
-            AlertDialog.Builder dialogBuilder = CreateNewSessionDialogBuilder();
-            newSessionDialog = dialogBuilder.Create();
-        }
-
-        private void InitializeNewSessionDialogViews()
-        {
-            var inflater = (LayoutInflater)GetSystemService(LayoutInflaterService);
-            newSessionDialogView = inflater.Inflate(Resource.Layout.AddSessionDialog, null);
-            newSessionDialogNameEdit = newSessionDialogView.FindViewById<TextView>(Resource.Id.sessionNameEdit);
-        }
-
-        private AlertDialog.Builder CreateNewSessionDialogBuilder()
-        {
-            AlertDialog.Builder builder = new AlertDialog.Builder(this);
-            ConfigureNewSessionDialogBuilder(builder);
-            return builder;
-        }
-
-        private void ConfigureNewSessionDialogBuilder(AlertDialog.Builder builder)
-        {
-            builder.SetView(newSessionDialogView);
-            SetNewSessionDialogBuilderPositive(builder);
-            SetNewSessionDialogBuilderNegative(builder);
-        }
-
-        private void SetNewSessionDialogBuilderNegative(AlertDialog.Builder builder)
-        {
-            builder.SetNegativeButton("Nope", (sender, args) =>
-            {
-                ClearNewSessionDialogNameEdit();
-            });
-        }
-
-        private void SetNewSessionDialogBuilderPositive(AlertDialog.Builder builder)
-        {
-            builder.SetPositiveButton("Ok", (sender, args) =>
-            {
-                AddSession(newSessionDialogNameEdit.Text);
-                ClearNewSessionDialogNameEdit();
-            });
-        }
-
-        private void ClearNewSessionDialogNameEdit()
-        {
-            newSessionDialogNameEdit.Text = "";
+            SetSessionNameDialogText(session);
+            new SessionNameDialogFragment().Show(FragmentManager, "session");
         }
 
         private void AddSession(string name)
         {
             if (name.Length > 0)
             {
-                sessionListAdapter.Add(name);
-                Directory.CreateDirectory(RootPath + "/" + SessionFolderPrefix + name);
+                new File(RootPath + "/" + SessionFolderPrefix + name).Mkdir();
+                UpdateSessions();
             }
         }
 
         private void UpdateSessions()
         {
             sessionListAdapter.Clear();
-            foreach (string s in Directory.GetDirectories(RootPath))
+            foreach (File f in new File(RootPath).ListFiles())
             {
-                AddSessionFromDirectory(Path.GetFileName(s));
+                if (f.IsDirectory && f.Name.StartsWith(SessionFolderPrefix))
+                {
+                    sessionListAdapter.Add(f.Name.Substring(SessionFolderPrefix.Length));
+                }
             }
         }
 
-        private void AddSessionFromDirectory(string directory)
+        private File GetSessionFolder(string session)
         {
-            if (directory.StartsWith(SessionFolderPrefix))
-            {
-                AddSession(directory.Substring(SessionFolderPrefix.Length));
-            }
+            return new File(RootPath + "/" + SessionFolderPrefix + session);
+        }
+
+        public void OnPositiveButtonClick(DialogFragment dialog)
+        {
+            AddSession(GetSessionNameDialogText());
+            SetSessionNameDialogText();
+        }
+
+        public void OnNegativeButtonClick(DialogFragment dialog)
+        {
+            SetSessionNameDialogText();
+        }
+
+        private void SetSessionNameDialogText(string text = "")
+        {
+            sessionNameDialogTextView.Text = text;
+        }
+
+        private string GetSessionNameDialogText()
+        {
+            return sessionNameDialogTextView.Text;
         }
     }
 }
