@@ -18,13 +18,12 @@ using CameraError = Android.Hardware.Camera2.CameraError;
 namespace ISpyWithMyLittleEye
 {
     [Activity(Label = "Session Activity")]
-    public class SessionActivity : Activity
+	public class SessionActivity : Activity
     {
         private List<string> images;
         private MediaListAdapter adapter;
         private ListView mediaList;
-        private Button photoButton;
-        private Button videoButton;
+		private RelativeLayout relativeLayout;
         private string sessionPath;
         private CameraDevice cameraDevice;
         private bool openingCamera;
@@ -50,28 +49,50 @@ namespace ISpyWithMyLittleEye
 
         private void InitializeUI()
         {
-            photoButton = FindViewById<Button>(Resource.Id.photoButton);
-            videoButton = FindViewById<Button>(Resource.Id.videoButton);
-            InitializeEventHandlers();
-            InitializeSessionList();
+			relativeLayout = FindViewById<RelativeLayout>(Resource.Id.sessionActivityRelativeLayout);
+			InitializeSessionList();
+			InitializeEventHandlers();
         }
 
         private void InitializeEventHandlers()
         {
-            photoButton.Click += (sender, args) => { TakePicture(); };
-            videoButton.Click += (sender, args) =>
-            {
-                if (recordingVideo)
-                {
-                    StopRecord();
-                }
-                else
-                {
-                    StartRecord();
-
-                }
-            };
+			relativeLayout.Click += (sender, e) =>
+			{
+				ClickHandler();
+			};
+			relativeLayout.LongClick += (sender, e) => 
+			{
+				LongClickHandler();
+			};
+			mediaList.ItemClick += (sender, e) => 
+			{
+				ClickHandler();
+			};
+			mediaList.ItemLongClick += (sender, e) => 
+			{
+				LongClickHandler();
+			};
         }
+
+		private void ClickHandler()
+		{
+			if (recordingVideo)
+			{
+				StopRecord();
+			}
+			else 
+			{
+				TakePicture();	
+			}
+		}
+
+		private void LongClickHandler()
+		{
+			if (!recordingVideo)
+			{
+				StartRecord();	
+			}
+		}
 
         private void StopRecord()
         {
@@ -79,7 +100,6 @@ namespace ISpyWithMyLittleEye
             //mediaRecorder.Reset();
             CloseCamera();
             OpenCamera();
-            videoButton.Text = "Start record";
             recordingVideo = false;
         }
 
@@ -326,14 +346,12 @@ namespace ISpyWithMyLittleEye
             try
             {
                 string cameraId = manager.GetCameraIdList()[0];
-                CameraCharacteristics characteristics = manager.GetCameraCharacteristics(cameraId);
-                StreamConfigurationMap map = (StreamConfigurationMap)characteristics.Get(CameraCharacteristics.ScalerStreamConfigurationMap);
                 manager.OpenCamera(cameraId, stateListener, backgroundHandler);
             }
-            catch (CameraAccessException ex)
-            {
-                Toast.MakeText(this, "Cannot access the camera.", ToastLength.Short).Show();
-            }
+            catch (CameraAccessException ex) {
+				Log.WriteLine(LogPriority.Info, "Cannot access the camera", ex.StackTrace);
+			}
+          
         }
         private void SetUpCaptureRequestBuilder(CaptureRequest.Builder builder)
         {
@@ -432,16 +450,15 @@ namespace ISpyWithMyLittleEye
                 {
                     try
                     {
-                        session.SetRepeatingRequest(builder.Build(), null, backgroundHandler);
+						session.SetRepeatingRequest(builder.Build(), null, backgroundHandler);
                     }
                     catch (CameraAccessException ex)
                     {
                         Log.WriteLine(LogPriority.Info, "Capture Session error: ", ex.ToString());
                     }
                 }
-            }, backgroundHandler);
+			}, backgroundHandler);
             mediaRecorder.Start();
-            videoButton.Text = "Stop record";
             recordingVideo = true;
         }
         public void AddImage(string path)
