@@ -200,11 +200,7 @@ namespace ISpyWithMyLittleEye
                 Image image = null;
                 try
                 {
-                    image = reader.AcquireLatestImage();
-                    ByteBuffer buffer = image.GetPlanes()[0].Buffer;
-                    byte[] bytes = new byte[buffer.Capacity()];
-                    buffer.Get(bytes);
-                    Save(bytes);
+                    image = SaveImage(reader);
                 }
                 catch (FileNotFoundException ex)
                 {
@@ -221,7 +217,22 @@ namespace ISpyWithMyLittleEye
                 }
             }
 
+            private Image SaveImage(ImageReader reader)
+            {
+                Image image = reader.AcquireLatestImage();
+                ByteBuffer buffer = image.GetPlanes()[0].Buffer;
+                byte[] bytes = new byte[buffer.Capacity()];
+                buffer.Get(bytes);
+                Save(bytes);
+                return image;
+            }
+
             private void Save(byte[] bytes)
+            {
+                WriteImage(bytes);
+            }
+
+            private void WriteImage(byte[] bytes)
             {
                 OutputStream output = null;
                 try
@@ -366,23 +377,9 @@ namespace ISpyWithMyLittleEye
                 {
                     return;
                 }
-                CameraManager manager = (CameraManager)GetSystemService(Context.CameraService);
+                Size jpegSize = GetJpegSize();
 
-                CameraCharacteristics characteristics = manager.GetCameraCharacteristics(cameraDevice.Id);
-                Size[] jpegSizes = null;
-                if (characteristics != null)
-                {
-                    jpegSizes = ((StreamConfigurationMap)characteristics.Get(CameraCharacteristics.ScalerStreamConfigurationMap)).GetOutputSizes((int)ImageFormatType.Jpeg);
-                }
-                int width = 640;
-                int height = 480;
-                if (jpegSizes != null && jpegSizes.Length > 0)
-                {
-                    width = jpegSizes[0].Width;
-                    height = jpegSizes[0].Height;
-                }
-
-                ImageReader reader = ImageReader.NewInstance(width, height, ImageFormatType.Jpeg, 1);
+                ImageReader reader = ImageReader.NewInstance(jpegSize.Width, jpegSize.Height, ImageFormatType.Jpeg, 1);
                 List<Surface> outputSurfaces = new List<Surface>();
                 outputSurfaces.Add(reader.Surface);
 
@@ -390,18 +387,16 @@ namespace ISpyWithMyLittleEye
                 captureBuilder.AddTarget(reader.Surface);
                 SetUpCaptureRequestBuilder(captureBuilder);
 
-                DateTime now = DateTime.Now;
-                string filePath = sessionPath + now.Day.ToString() + "." +  now.Month.ToString() + "." + now.Year.ToString() + "-" 
-                    + now.Hour.ToString() + "_" + now.Minute.ToString() + "_" + now.Second.ToString() + ".jpg";
-                File file = new File(filePath);
+                File file = GetFileName();
 
                 ImageAvailableListener readerListener = new ImageAvailableListener() { File = file };
-                reader.SetOnImageAvailableListener(readerListener, backgroundHandler);
                 CameraCaptureListener captureListener = new CameraCaptureListener() { Activity = this, File = file };
+                reader.SetOnImageAvailableListener(readerListener, backgroundHandler);
 
                 cameraDevice.CreateCaptureSession(outputSurfaces, new CameraCaptureStateListener()
                 {
-                    OnConfiguredAction = (CameraCaptureSession session) => {
+                    OnConfiguredAction = (CameraCaptureSession session) =>
+                    {
                         try
                         {
                             session.Capture(captureBuilder.Build(), captureListener, backgroundHandler);
@@ -418,7 +413,49 @@ namespace ISpyWithMyLittleEye
                 Log.WriteLine(LogPriority.Info, "Taking picture error: ", ex.StackTrace);
             }
         }
+
+        private File GetFileName()
+        {
+            DateTime now = DateTime.Now;
+            string filePath = sessionPath + now.Day.ToString() + "." + now.Month.ToString() + "." + now.Year.ToString() + "-"
+                + now.Hour.ToString() + "_" + now.Minute.ToString() + "_" + now.Second.ToString() + ".jpg";
+            File file = new File(filePath);
+            return file;
+        }
+
+        private Size GetJpegSize()
+        {
+            CameraManager manager = (CameraManager)GetSystemService(Context.CameraService);
+            CameraCharacteristics characteristics = manager.GetCameraCharacteristics(cameraDevice.Id);
+            Size[] jpegSizes = null;
+            if (characteristics != null)
+            {
+                jpegSizes = ((StreamConfigurationMap)characteristics.Get(CameraCharacteristics.ScalerStreamConfigurationMap)).GetOutputSizes((int)ImageFormatType.Jpeg);
+            }
+            int width = 640;
+            int height = 480;
+            if (jpegSizes != null && jpegSizes.Length > 0)
+            {
+                width = jpegSizes[0].Width;
+                height = jpegSizes[0].Height;
+            }
+            return new Size(width, height);
+        }
+
         private void SetupMediaRecorder()
+        {
+            Size videoSize = GetVideoSize();
+            mediaRecorder.SetVideoSource(VideoSource.Surface);
+            mediaRecorder.SetOutputFormat(OutputFormat.Mpeg4);
+            mediaRecorder.SetOutputFile(new File(sessionPath + "/video.mp4").AbsolutePath);
+            mediaRecorder.SetVideoEncodingBitRate(10000000);
+            mediaRecorder.SetVideoFrameRate(30);
+            mediaRecorder.SetVideoSize(videoSize.Width, videoSize.Height);
+            mediaRecorder.SetVideoEncoder(VideoEncoder.H264);
+            mediaRecorder.Prepare();
+        }
+
+        private Size GetVideoSize()
         {
             CameraManager manager = (CameraManager)GetSystemService(CameraService);
             CameraCharacteristics characteristics = manager.GetCameraCharacteristics(cameraDevice.Id);
@@ -427,15 +464,9 @@ namespace ISpyWithMyLittleEye
             Size[] sizes = configs.GetOutputSizes(Class.FromType(typeof(MediaRecorder)));
             int width = sizes[0].Width;
             int height = sizes[0].Height;
-            mediaRecorder.SetVideoSource(VideoSource.Surface);
-            mediaRecorder.SetOutputFormat(OutputFormat.Mpeg4);
-            mediaRecorder.SetOutputFile(new File(sessionPath + "/video.mp4").AbsolutePath);
-            mediaRecorder.SetVideoEncodingBitRate(10000000);
-            mediaRecorder.SetVideoFrameRate(30);
-            mediaRecorder.SetVideoSize(width, height);
-            mediaRecorder.SetVideoEncoder(VideoEncoder.H264);              
-            mediaRecorder.Prepare();
+            return new Size(width, height);
         }
+
         private void StartRecord()
         {
             SetupMediaRecorder();
