@@ -56,7 +56,7 @@ namespace ISpyWithMyLittleEye
 
         private void InitializeEventHandlers()
         {
-			relativeLayout.Click += (sender, e) =>
+            relativeLayout.Click += (sender, e) =>
 			{
 				ClickHandler();
 			};
@@ -248,7 +248,7 @@ namespace ISpyWithMyLittleEye
                 if (Activity != null && File != null)
                 {
                     Activity.AddImage(File.ToString());
-                    new UpdateMediaListTask(Activity.adapter).Execute();
+                    new UpdateMediaListTask(Activity.adapter) { a = Activity }.Execute();
                 }
             }
         }
@@ -285,6 +285,7 @@ namespace ISpyWithMyLittleEye
         private class UpdateMediaListTask : AsyncTask
         {
             private MediaListAdapter Adapter;
+            public SessionActivity a;
             public UpdateMediaListTask(MediaListAdapter adapter)
             {
                 Adapter = adapter;
@@ -355,7 +356,7 @@ namespace ISpyWithMyLittleEye
         }
         private void SetUpCaptureRequestBuilder(CaptureRequest.Builder builder)
         {
-            builder.Set(CaptureRequest.ControlMode, new Integer((int)ControlMode.Auto));
+            builder.Set(CaptureRequest.ControlMode, new Java.Lang.Integer((int)ControlMode.Auto));
         }
         private void TakePicture()
         {
@@ -390,7 +391,7 @@ namespace ISpyWithMyLittleEye
                 SetUpCaptureRequestBuilder(captureBuilder);
 
                 DateTime now = DateTime.Now;
-                string filePath = sessionPath + "-" + now.Day.ToString() + "." +  now.Month.ToString() + "." + now.Year.ToString() + "-" 
+                string filePath = sessionPath + now.Day.ToString() + "." +  now.Month.ToString() + "." + now.Year.ToString() + "-" 
                     + now.Hour.ToString() + "_" + now.Minute.ToString() + "_" + now.Second.ToString() + ".jpg";
                 File file = new File(filePath);
 

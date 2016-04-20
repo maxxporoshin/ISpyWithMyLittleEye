@@ -11,5 +11,7 @@
         p1:layout_width="match_parent"
         p1:layout_height="wrap_content"
         p1:layout_alignParentTop="true"
+        p1:transcriptMode="alwaysScroll"
+        p1:stackFromBottom="true"
         p1:id="@+id/mediaList" />
 </RelativeLayout>

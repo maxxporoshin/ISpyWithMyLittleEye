@@ -56,12 +56,18 @@ namespace ISpyWithMyLittleEye
         {
             return Images.GetHashCode();
         }
+
+        public override Java.Lang.Object GetItem(int position)
+        {
+            return Images[position];
+        }
+
         public void Add(string s)
         {
             Images.Add(s);
         }
 
-        internal void Clear()
+        public void Clear()
         {
             Images.Clear();
         }
